@@ -1,1 +1,7 @@
 /gameplay/
+.idea/
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+.venv

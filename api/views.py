@@ -1,16 +1,16 @@
-from urllib import request
 
-from django.shortcuts import render
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import UserCreationForm
-from django.urls import reverse_lazy
-from django.views.generic import CreateView
+from django.contrib.auth.tokens import default_token_generator, PasswordResetTokenGenerator
+
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import status
 
@@ -23,7 +23,72 @@ def home(request):
     return Response({"message": f"Welcome {request.user.username}!"})
 
 @api_view(['POST'])
-# this handles the google login, google token should come from frontend
+@permission_classes([AllowAny])
+def signup(request):
+    email = request.data.get('email')
+    password = request.data.get('password')
+    username = request.data.get('username', email)
+    User = get_user_model()
+
+    if not email or not password or not username:
+        return Response({"error": "All fields must be filled"}, status = status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(email = email).exists():
+        return Response({"error": "The specified email has already been registered"}, status = status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(username = username).exists():
+        return Response({"error": "The username is already taken"}, status = status.HTTP_400_BAD_REQUEST)
+
+    user = User.objects.create_user(
+        email = email,
+        username = username,
+        password = password
+    )
+
+    return Response({"message": "Successfully registered!"}, status = status.HTTP_201_CREATED)
+
+# this is the login view
+class CookieTokenObtainPairView(TokenObtainPairView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            access_token = response.data['access']
+            refresh_token = response.data['refresh']
+
+            if access_token and refresh_token:
+
+                # assign tokens to cookie
+                response.set_cookie(key = 'access',
+                                    value = access_token,
+                                    httponly = True,
+                                    samesite = 'Strict',
+                                    secure = True,)
+                response.set_cookie(key = 'refresh',
+                                    value = refresh_token,
+                                    httponly=True,
+                                    samesite='Strict',
+                                    secure=True,
+                                    )
+        return response
+
+# this is the view for refreshing tokens
+class CookieTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        # get refresh token from cookie
+        refresh_token = request.COOKIES.get('refresh')
+        if not refresh_token:
+            return Response({"error": "Refresh token not found"}, status = status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data = {"refresh": refresh_token})
+        serializer.is_valid(raise_exception = True)
+        access = serializer.validated_data['access']
+
+        response = Response({"message": "Token refreshed!"})
+        response.set_cookie(key = 'access', value = access, httponly = True,)
+        return response
+
+# this handles the google login, google ID token should come from frontend
+@api_view(['POST'])
 def google_login(request):
     token = request.data.get('id_token')
     # error if invalid or missing token
@@ -73,25 +138,82 @@ def logout(request):
     response.delete_cookie(key = 'refresh')
     return response
 
-class CookieTokenObtainPairView(TokenObtainPairView):
-    def post(self, request, *args, **kwargs):
-        response = super().post(request, *args, **kwargs)
-        if response.status_code == 200:
-            access_token = response.data['access']
-            refresh_token = response.data['refresh']
+# this is the password change for a user that is already logged in
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def password_change(request):
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
 
-            if access_token and refresh_token:
+    if not old_password or not new_password:
+        return Response({"error": "All fields must be filled"}, status = status.HTTP_400_BAD_REQUEST)
 
-                # assign tokens to cookie
-                response.set_cookie(key = 'access',
-                                    value = access_token,
-                                    httponly = True,
-                                    samesite = 'Strict',
-                                    secure = True,)
-                response.set_cookie(key = 'refresh',
-                                    value = refresh_token,
-                                    httponly=True,
-                                    samesite='Strict',
-                                    secure=True,
-                                    )
-        return response
+    user = request.user
+    # check if old password is correct
+    if not user.check_password(old_password):
+        return Response({"error": "Incorrect old password"}, status = status.HTTP_400_BAD_REQUEST)
+    # check if new password and confirm new password are the same
+    if new_password != confirm_password:
+        return Response({"error": "New passwords do not match"}, status = status.HTTP_400_BAD_REQUEST)
+
+    # if reached here, it means inputs are valid
+    # set new password
+    user.set_password(new_password)
+    user.save()
+
+    return Response({"message": "Password changed successfully!"}, status = status.HTTP_200_OK)
+
+# this is the password change for a user that is logged out (forgot password)
+# this method handles sending the password reset email
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_request(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({"error": "No email provided"}, status = status.HTTP_400_BAD_REQUEST)
+
+    User = get_user_model()
+    try:
+        user = User.objects.get(email = email)
+    except User.DoesNotExist:
+        return Response({"error": "There is no existing user with the email provided"}, status = status.HTTP_400_BAD_REQUEST)
+
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+
+    reset_link = f'http://localhost:8000/password-reset/{uid}/{token}'
+
+    send_mail(
+        subject = "Password reset",
+        message = f"Reset Your Password: {reset_link}",
+        from_email = "no-reply@localhost.com",
+        recipient_list = [email],
+    )
+
+    return Response({"message": "Password reset email sent"}, status = status.HTTP_200_OK)
+
+# this is the password change for a user that is logged out (forgot password)
+# this method handles the actual password reset
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_confirm(request, uidb64, token):
+    new_password = request.data.get('new_password')
+    if not new_password:
+        return Response({"error": "No new password provided"}, status = status.HTTP_400_BAD_REQUEST)
+
+    User = get_user_model()
+    # check for valid reset link
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk = uid)
+    except (User.DoesNotExist, ValueError):
+        return Response({"error": "Invalid link"}, status = status.HTTP_400_BAD_REQUEST)
+
+    token_generator = PasswordResetTokenGenerator()
+    if not token_generator.check_token(user, token):
+        return Response({"error": "Invalid or expired token"}, status = status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(new_password)
+    user.save()
+    return Response({"message": "Password changed successfully!"}, status = status.HTTP_200_OK)
