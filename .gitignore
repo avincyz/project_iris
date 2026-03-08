@@ -1,6 +1,5 @@
-/gameplay/
 .idea/
-__pycache__/
+Project_Iris/__pycache__/
 *.py[cod]
 *.sqlite3
 *.log
