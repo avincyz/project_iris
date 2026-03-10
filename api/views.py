@@ -85,7 +85,7 @@ class CookieTokenRefreshView(TokenRefreshView):
         response.set_cookie(key = 'access', value = access, httponly = True,)
         return response
 
-# this handles the google login, google ID token should come from frontend
+# this handles the Google login, google ID token should come from frontend
 @api_view(['POST'])
 def google_login(request):
     token = request.data.get('id_token')

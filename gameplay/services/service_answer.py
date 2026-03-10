@@ -59,11 +59,12 @@ def process_answer(session_id, question_id, selected_option_id):
             score_change *= diff_modifier
             score_change = round(score_change, 2)
 
-        # rounding prevents floating-point precision issues like score_change being output as '-14.399999999999999'
-
         # apply change values
         session.score += score_change
         session.health += health_change
+        # rounding prevents floating-point precision issues like score_change being output as '-14.399999999999999'
+        session.score = round(session.score, 2)
+        session.health = round(session.health, 2)
         # score and health values must be from 0 to 100 only
         session.score = max(0, session.score)
         session.score = min(session.score, 100)
@@ -78,6 +79,10 @@ def process_answer(session_id, question_id, selected_option_id):
         # mark question as answered
         question.is_answered = True
         question.selected_option_id = selected_option_id
+
+        # save changes for below checks
+        question.save()
+        session.save()
 
         stage_complete = False
         all_stages_complete = False
@@ -94,7 +99,7 @@ def process_answer(session_id, question_id, selected_option_id):
             questions_left = QuestionRun.objects.filter(
                 stage_name = question.stage_name,
                 is_answered = False
-            ).exclude(id = question.id).exists()
+            ).exists()
 
             # no question left, go to next stage
             if not questions_left:
@@ -120,7 +125,7 @@ def process_answer(session_id, question_id, selected_option_id):
                     session.status = 'completed'
                     session.completed_at = timezone.now()
 
-        # save changes to database
+        # save changes made from checks (if any) to database
         question.save()
         session.save()
         stage_name.save()

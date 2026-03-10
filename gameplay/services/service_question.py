@@ -30,7 +30,7 @@ def generate_questions(session_id, stage_name):
         'Which strategy is the most appropriate?',
     ]
 
-    num_questions = 5
+    num_questions = random.randint(1, 3)
 
     created_questions = []
 
