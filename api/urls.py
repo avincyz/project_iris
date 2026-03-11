@@ -1,9 +1,7 @@
 # api\urls.py
 from django.urls import path
-from django.views.generic import TemplateView
 
 from . import views
-from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
     path('home/', views.home, name = 'home'),
