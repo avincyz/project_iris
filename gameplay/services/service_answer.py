@@ -1,6 +1,5 @@
 from django.db import transaction
 from django.utils import timezone
-from rest_framework import status
 
 from ..config.score_sheet import OUTCOME_SCORES, OUTCOME_HEALTH_CHANGES, DIFFICULTY_MODIFIER
 from ..models import GameSession, QuestionRun, StageRun
