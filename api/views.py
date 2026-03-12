@@ -15,6 +15,8 @@ from rest_framework import status
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
+from gameplay.models import User
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def home(request):
@@ -43,7 +45,38 @@ def signup(request):
         password = password
     )
 
-    return Response({'message': 'Successfully registered!'}, status = status.HTTP_201_CREATED)
+    user.is_active = False
+    user.save()
+
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+
+    verify_link = f'http://localhost:8000/api/verify-email/{uid}/{token}/'
+
+    send_mail(
+        subject = 'Verify your email',
+        message = f'Click the link to verify:\n{verify_link}',
+        from_email='no-reply@localhost.com',
+        recipient_list=[email],
+    )
+
+    return Response({'message': 'Successfully registered! Check email for verification link.'}, status = status.HTTP_201_CREATED)
+
+@api_view(['POST'])
+def verify_email(request, uidb64, token):
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = User.objects.get(pk = uid)
+    except:
+        return Response({'error': 'Invalid link'}, status = status.HTTP_400_BAD_REQUEST)
+
+    if default_token_generator.check_token(user, token):
+        user.is_active = True
+        user.save()
+
+        return Response({'message': 'Successfully verified! You may now log in.'}, status = status.HTTP_200_OK)
+    else:
+        return Response({'error': 'Invalid or expired token'}, status = status.HTTP_400_BAD_REQUEST)
 
 # this is the login view
 class CookieTokenObtainPairView(TokenObtainPairView):
