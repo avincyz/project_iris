@@ -89,17 +89,20 @@ class CookieTokenObtainPairView(TokenObtainPairView):
             if access_token and refresh_token:
 
                 # assign tokens to cookie
-                response.set_cookie(key = 'access',
-                                    value = access_token,
-                                    httponly = True,
-                                    samesite = 'Strict',
-                                    secure = True,)
-                response.set_cookie(key = 'refresh',
-                                    value = refresh_token,
-                                    httponly=True,
-                                    samesite='Strict',
-                                    secure=True,
-                                    )
+                response.set_cookie(
+                    key = 'access',
+                    value = access_token,
+                    httponly = True,
+                    samesite = 'Strict',
+                    secure = True,
+                )
+                response.set_cookie(
+                    key = 'refresh',
+                    value = refresh_token,
+                    httponly=True,
+                    samesite='Strict',
+                    secure=True,
+                )
         return response
 
 # this is the view for refreshing tokens

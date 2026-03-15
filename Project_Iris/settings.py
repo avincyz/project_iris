@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from datetime import timedelta
 
@@ -133,7 +132,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFE_TIME': timedelta(hours = 1),
+    'ACCESS_TOKEN_LIFE_TIME': timedelta(minutes = 30),
     'REFRESH_TOKEN_LIFE_TIME': timedelta(days = 1),
 }
 

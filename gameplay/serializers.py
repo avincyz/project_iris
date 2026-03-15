@@ -1,16 +1,14 @@
 from rest_framework import serializers
-from .models import GameSession
+from .config.choices import (INCIDENT_TYPE_CHOICES,
+                             DIFFICULTY_CHOICES)
 
 class GameSessionStartSerializer(serializers.Serializer):
-
-    incident_type = serializers.ChoiceField(choices = GameSession.INCIDENT_TYPE_CHOICES)
-
-    difficulty = serializers.IntegerField(min_value = 1, max_value = 3)
+    incident_type = serializers.ChoiceField(choices = INCIDENT_TYPE_CHOICES)
+    difficulty = serializers.ChoiceField(choices = DIFFICULTY_CHOICES)
 
 class GenerateQuestionsSerializer(serializers.Serializer):
-    session_id = serializers.IntegerField()
+    questions_per_stage = serializers.IntegerField(default = 2)
 
 class AnswerQuestionSerializer(serializers.Serializer):
-    session_id = serializers.IntegerField()
-    stage_name = serializers.CharField()
+    question_uid = serializers.CharField()
     selected_option_id = serializers.CharField()

@@ -1,50 +1,42 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
+from .config.choices import (USER_ROLE_CHOICES,
+                             INCIDENT_TYPE_CHOICES,
+                             SESSION_STATUS_CHOICES,
+                             STAGE_TYPE_CHOICES,
+                             STAGE_STATUS_CHOICES,
+                             DIFFICULTY_CHOICES)
+
+# a single user of the app
 class User(AbstractUser):
-    ROLE_CHOICES = (
-        ('tech', 'Technical'),
-        ('nontech', 'Non-Technical'),
-    )
+    role = models.CharField(max_length = 20, choices = USER_ROLE_CHOICES, default = 'nontech')
 
-    role = models.CharField(max_length = 20, choices = ROLE_CHOICES, default = 'nontech')
-
-# represents a full simulation run
+# a full simulation run
 class GameSession(models.Model):
-
-    INCIDENT_TYPE_CHOICES = [
-        ('phishing','Phishing'),
-        ('ransomware', 'Ransomware'),
-        ('malware', 'Malware'),
-        ('data_loss','Data Loss'),
-        ('denial_of_service','DoS'),
-    ]
-
-    STATUS_CHOICES = [
-        ('in progress', 'In Progress'),
-        ('paused', 'Paused'),
-        ('completed', 'Completed'), # when all questions are complete
-        ('failed', 'Failed'), # fails if health reaches 0
-        ('abandoned', 'Abandoned'), # user quits
-    ]
 
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
     )
 
-    incident_type = (models.CharField(
+    incident_type = models.CharField(
         max_length = 50,
-        choices = INCIDENT_TYPE_CHOICES)
+        choices = INCIDENT_TYPE_CHOICES
     )
 
-    difficulty = models.IntegerField()
+    difficulty = models.CharField(
+        max_length = 10,
+        choices = DIFFICULTY_CHOICES
+    )
 
     status = models.CharField(
         max_length = 20,
-        choices = STATUS_CHOICES,
+        choices = SESSION_STATUS_CHOICES,
         default = 'in progress',
     )
+
+    scenario_json = models.JSONField()
 
     score = models.IntegerField(default = 0)
     wrong_count = models.IntegerField(default = 0)
@@ -58,71 +50,20 @@ class GameSession(models.Model):
     def __str__(self):
         return f'Session {self.id} - {self.incident_type} - {self.status}'
 
-# this represents the scenario structure
-class ScenarioSnapshot(models.Model):
-
-    session = models.ForeignKey(
-        GameSession,
-        on_delete = models.CASCADE,
-        related_name = 'snapshots'
-    )
-
-    seed = models.IntegerField(default = 0)
-
-    scenario_json = models.JSONField()
-    generated_at = models.DateTimeField(auto_now_add = True)
-
-    def __str__(self):
-        return f'Scenario Snapshot for Session {self.session.id}'
-
-# this represents the stages within the scenario
-class StageRun(models.Model):
-
-    STAGE_TYPE_CHOICES = [
-        ('prepare', 'Prepare'),
-        ('detect', 'Detect'),
-        ('analyse', 'Analyse'),
-        ('remediate', 'Remediate'),
-        ('post_incident', 'Post Incident'),
-    ]
-
-    STATUS_CHOICES = [
-        ('locked', 'Locked'),
-        ('active', 'Active'),
-        ('done', 'Done'),
-    ]
-
-    session = models.ForeignKey(
-        GameSession,
-        on_delete=models.CASCADE,
-        related_name = 'stages'
-    )
-
-    stage_name = models.CharField(
-        max_length = 20,
-        choices = STAGE_TYPE_CHOICES
-    )
-
-    status = models.CharField(
-        max_length = 10,
-        choices = STATUS_CHOICES,
-        default = 'locked'
-    )
-
-    order_index = models.IntegerField(default = 0)
+# a playbook which the AI will reference to generate the scenario
+class Playbook(models.Model):
+    slug = models.SlugField(max_length = 50)
+    difficulty = models.CharField(max_length = 10, choices = DIFFICULTY_CHOICES)
+    version = models.PositiveIntegerField(default = 1)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=['session', 'stage_name'],
-                name='unique_stage_name_per_session',
-            )
-        ]
+        unique_together = ('slug', 'difficulty', 'version')
 
     def __str__(self):
-        return f'{self.stage_name} - Session {self.session.id}'
+        return f'{self.slug} ({self.difficulty}) v{self.version}'
 
-# this stores question snapshots within a session
+# a single question snapshot within a session
+# the question and options that will be displayed are taken from the GeneratedQuestion and GeneratedOption objects
 class QuestionRun(models.Model):
 
     session = models.ForeignKey(
@@ -131,7 +72,7 @@ class QuestionRun(models.Model):
         related_name = 'questions'
     )
 
-    stage_name = models.CharField(max_length = 20)
+    stage_name = models.CharField(max_length = 50)
 
     question_uid = models.CharField(max_length = 100)
     question_text = models.TextField()
@@ -155,7 +96,79 @@ class QuestionRun(models.Model):
     def __str__(self):
         return self.question_uid
 
-# this stores the user's answer for each question
+
+# a stage within the scenario
+# one scenario will typically consist of five pages
+class StageRun(models.Model):
+    session = models.ForeignKey(
+        GameSession,
+        on_delete = models.CASCADE,
+        related_name = 'stages'
+    )
+
+    stage_name = models.CharField(
+        max_length = 50,
+        choices = STAGE_TYPE_CHOICES
+    )
+
+    status = models.CharField(
+        max_length = 10,
+        choices = STAGE_STATUS_CHOICES,
+        default = 'locked'
+    )
+
+    order_index = models.IntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields = ['session', 'stage_name'],
+                name = 'unique_stage_name_per_session',
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.stage_name} - Session {self.session.id}'
+
+# a single ai-generated question within a scenario
+class GeneratedQuestion(models.Model):
+    playbook = models.ForeignKey(
+        Playbook,
+        on_delete = models.CASCADE,
+        related_name = 'playbook'
+    )
+    question_id = models.CharField(max_length = 120, unique = True)
+    stage_name = models.CharField(max_length = 20, choices = STAGE_TYPE_CHOICES)
+    prompt = models.TextField()
+    is_active = models.BooleanField(default = True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields = ['playbook', 'stage_name']),
+            models.Index(fields = ['id']),
+        ]
+
+    def __str__(self):
+        return f'{self.id}'
+
+# a single option for an ai-generated question
+class Option(models.Model):
+    question = models.ForeignKey(
+        GeneratedQuestion,
+        on_delete = models.CASCADE,
+        related_name = 'options'
+    )
+    option_uid = models.CharField(max_length = 1) # A/B/C
+    option_text = models.TextField()
+    outcome = models.CharField(max_length = 10)
+
+    class Meta:
+        unique_together = ('question', 'option_uid')
+
+    def __str__(self):
+        return f'{self.question.id} - Option {self.option_uid}'
+
+# the user's answer for each question
 class Answer(models.Model):
 
     question = models.ForeignKey(
@@ -176,8 +189,9 @@ class Answer(models.Model):
         ]
 
     def __str__(self):
-        return f'Answer for Question {self.question_id} - {self.selected_option_id}'
+        return f'Answer for Question {self.question.question_uid} - {self.selected_option_id}'
 
+# the debrief shown after a scenario has ended
 class DebriefSnapshot(models.Model):
     session = models.OneToOneField(
         GameSession,
@@ -190,3 +204,4 @@ class DebriefSnapshot(models.Model):
 
     def __str__(self):
         return f'Debrief for Session {self.session.id}'
+

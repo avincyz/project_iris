@@ -14,8 +14,8 @@ OUTCOME_SCORES = {
 
 # note: this modifier should only affect penalties
 DIFFICULTY_MODIFIER = {
-    1: 0.8,     # easy
-    2: 1,       # medium
-    3: 1.2,     # critical
+    'easy': 0.8,     # easy
+    'medium': 1,       # medium
+    'hard': 1.2,     # critical
 }
 

@@ -4,7 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import GameSession, DebriefSnapshot
+from .models import GameSession, QuestionRun, DebriefSnapshot
 from .serializers import GameSessionStartSerializer, GenerateQuestionsSerializer, AnswerQuestionSerializer
 from .services.service_session import create_session, get_session_state
 from .services.service_question import generate_questions
@@ -19,21 +19,30 @@ def session_start_view(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    session = create_session(
-        user = request.user,
-        incident_type = serializer.validated_data['incident_type'],
-        difficulty = serializer.validated_data['difficulty'],
-    )
+    try:
+        session = create_session(
+            user = request.user,
+            incident_type = serializer.validated_data['incident_type'],
+            difficulty = serializer.validated_data['difficulty'],
+        )
 
-    return Response({
-        'session_id' : session.id,
-        'status': session.status,
-    })
+        return Response({
+            'session_id' : session.id,
+            'status': session.status,
+        },
+            status = status.HTTP_201_CREATED
+        )
+
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
 # view to generate new questions
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def generate_questions_view(request, stage_name):
+def generate_questions_view(request, session_id):
 
     serializer = GenerateQuestionsSerializer(data = request.data)
     if not serializer.is_valid():
@@ -41,10 +50,12 @@ def generate_questions_view(request, stage_name):
 
     data = serializer.validated_data
 
-    questions = generate_questions(
-        session_id = data['session_id'],
-        stage_name = stage_name
+    generate_questions(
+        session_id = session_id,
+        questions_per_stage = data['questions_per_stage'],
     )
+
+    questions = QuestionRun.objects.filter(session_id = session_id)
 
     response_data = []
 
@@ -62,7 +73,7 @@ def generate_questions_view(request, stage_name):
 # view for when user answers a question
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def answer_question_view(request, question_id):
+def answer_question_view(request, session_id):
     serializer = AnswerQuestionSerializer(data = request.data)
 
     if not serializer.is_valid():
@@ -72,8 +83,8 @@ def answer_question_view(request, question_id):
 
     try:
         result = process_answer(
-            session_id = data['session_id'],
-            question_id = question_id,
+            session_id = session_id,
+            question_uid = data['question_uid'],
             selected_option_id = data['selected_option_id'],
         )
 
