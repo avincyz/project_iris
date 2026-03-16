@@ -24,8 +24,6 @@ def generate_questions(session_id, questions_per_stage):
     # create a StageRun for each stage of the scenario listed in STAGE_TYPE_CHOICES
     stage_runs = {}
     for index, stage in enumerate(STAGE_TYPE_CHOICES):
-        print(index)
-        print(stage[0])
         status = 'active' if index == 0 else 'locked'
 
         stage_runs[index] = StageRun.objects.create(
@@ -37,11 +35,9 @@ def generate_questions(session_id, questions_per_stage):
 
     for index, stage_run in stage_runs.items():
         stage_name = stage_run.stage_name
-        print(stage_name)
         questions = get_stage_questions(playbook, stage_name[1])
         random.shuffle(questions)
         selected_questions = questions[:questions_per_stage]
-        print(selected_questions)
         snapshot_questions_to_stage(session, stage_run, selected_questions)
 
 def create_playbook(difficulty, playbook_slug, version = 1):

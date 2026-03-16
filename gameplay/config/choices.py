@@ -23,8 +23,8 @@ STAGE_TYPE_CHOICES = [
     ('prepare', 'Prepare'),
     ('detect', 'Detect'),
     ('analyse', 'Analyse'),
-    ('remediate', 'Remediate'),
-    ('post_incident', 'Post Incident'),
+    ('remediate', 'Remediation'),
+    ('post_incident', 'Post-Incident'),
 ]
 
 STAGE_STATUS_CHOICES = [

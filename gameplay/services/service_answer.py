@@ -1,8 +1,15 @@
+import random
+
 from django.db import transaction
 from django.utils import timezone
 
-from ..config.score_sheet import OUTCOME_SCORES, OUTCOME_HEALTH_CHANGES, DIFFICULTY_MODIFIER
-from ..models import GameSession, QuestionRun, StageRun
+from ..config.score_sheet import (OUTCOME_SCORE_CHANGES,
+                                  OUTCOME_HEALTH_CHANGES, DIFFICULTY_MODIFIER, PRESSURE_CHANGES, SEVERITY_CHOICES)
+from ..models import (GameSession,
+                      QuestionRun,
+                      StageRun)
+from .service_ai import (generate_ai_inject,
+                         generate_ai_crisis_event)
 
 def process_answer(session_id, question_uid, selected_option_id):
     session = GameSession.objects.get(
@@ -56,7 +63,7 @@ def process_answer(session_id, question_uid, selected_option_id):
             health_change = round(health_change, 2)
 
         # check how much score will change based on answer
-        score_change = OUTCOME_SCORES.get(outcome, 0)
+        score_change = OUTCOME_SCORE_CHANGES.get(outcome, 0)
         # if penalty (negative change), apply difficulty modifier
         if score_change < 0:
             score_change *= diff_modifier
@@ -79,13 +86,36 @@ def process_answer(session_id, question_uid, selected_option_id):
         if outcome != 'good':
             session.wrong_count += 1
 
+        # update pressure
+        pressure_change = PRESSURE_CHANGES.get(outcome, 0)
+        session.pressure_level += pressure_change
+        session.pressure_level = min(session.pressure_level, 100)
+        session.pressure_level = max(0, session.pressure_level)
+
         # mark question as answered
         question.is_answered = True
         question.selected_option_id = selected_option_id
 
-        # save changes for below checks
+        # save changes
         question.save()
         session.save()
+
+        # check scenario severity based on pressure
+        scenario_severity = None
+        for threshold, severity in SEVERITY_CHOICES:
+            if session.pressure_level >= threshold:
+                scenario_severity = severity
+                break
+
+        # AI-generate injects based on pressure
+        inject_message = None
+        crisis_event = None
+
+        if random.random() < 0.4:
+            inject_message = generate_ai_inject(session.incident_type, scenario_severity)
+
+        if random.random() < 0.5 and scenario_severity in ['critical', 'high']:
+            crisis_event = generate_ai_crisis_event(session.incident_type, scenario_severity)
 
         all_questions_complete = False
         scenario_failed = False
@@ -99,9 +129,11 @@ def process_answer(session_id, question_uid, selected_option_id):
         if not scenario_failed:
             # check for any questions left within that stage
             this_stage_questions_left = QuestionRun.objects.filter(
+                session = session,
                 stage_name = stage.stage_name,
                 is_answered = False
-            ).exists()
+            )
+            print(this_stage_questions_left)
 
             # no question left, go to next question and activate the corresponding stage
             if not this_stage_questions_left:
@@ -109,7 +141,8 @@ def process_answer(session_id, question_uid, selected_option_id):
                 # find the next question
                 next_question = QuestionRun.objects.filter(
                     session = session,
-                    id__gt = question.id
+                    id__gt = question.id,
+                    is_answered = False
                 ).order_by('id').first()
 
                 # if there is a next question, find the corresponding stage and set it to active
@@ -132,14 +165,23 @@ def process_answer(session_id, question_uid, selected_option_id):
         session.save()
         stage.save()
 
-        return {
+        result_json = {
             'outcome': outcome,
             'score_change': score_change,
             'health_change': health_change,
             'new_score': session.score,
             'new_health': session.health,
+            'pressure_level': session.pressure_level,
+            'current_severity': scenario_severity,
             'wrong_count': session.wrong_count,
             'all_questions_complete': all_questions_complete,
             'scenario_failed': scenario_failed,
         }
+
+        if inject_message:
+            result_json['inject_message'] = inject_message
+        if crisis_event:
+            result_json['crisis_event'] = crisis_event
+
+        return result_json
 
