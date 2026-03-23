@@ -78,12 +78,14 @@ class QuestionRun(models.Model):
     question_text = models.TextField()
 
     options_json = models.JSONField()
+    selected_option_id = models.CharField(max_length = 10)
 
     time_limit_seconds = models.IntegerField(default = 20)
 
     order_index = models.IntegerField(default = 0)
 
     is_answered = models.BooleanField(default = False)
+    answer_is_correct = models.BooleanField(default = True)
 
     class Meta:
         constraints = [
@@ -199,7 +201,7 @@ class DebriefSnapshot(models.Model):
         related_name = 'debrief'
     )
 
-    debrief_json = models.JSONField()
+    debrief_text = models.TextField()
     created_at = models.DateTimeField(auto_now_add = True)
 
     def __str__(self):

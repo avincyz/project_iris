@@ -6,10 +6,10 @@ from rest_framework.permissions import IsAuthenticated
 
 from .models import GameSession, QuestionRun, DebriefSnapshot
 from .serializers import GameSessionStartSerializer, GenerateQuestionsSerializer, AnswerQuestionSerializer
+from .services.service_ai import generate_ai_feedback
 from .services.service_session import create_session, get_session_state
 from .services.service_question import generate_questions
 from .services.service_answer import process_answer
-from .services.service_debrief import generate_debrief
 
 # view to start a new session
 @api_view(['POST'])
@@ -106,21 +106,32 @@ def generate_debrief_view(request, session_id):
         )
 
     if hasattr(session, 'debrief'):
+        # for testing
+        print(session.debrief.debrief_text)
         return Response({
             'message': 'There is already a debrief for this session',
-            'debrief': session.debrief.debrief_json
+            'debrief': session.debrief.debrief_text
         })
 
-    debrief_data = generate_debrief(session)
+    if session.status not in ['completed', 'failed']:
+        return Response(
+            {'error': 'Session is still in progress or abandoned'},
+            status = status.HTTP_400_BAD_REQUEST
+        )
+
+    debrief_data = generate_ai_feedback(session)
 
     debrief_snapshot = DebriefSnapshot.objects.create(
         session = session,
-        debrief_json = debrief_data
+        debrief_text = debrief_data
     )
+
+    # for testing
+    print(debrief_snapshot.debrief_text)
 
     return Response({
         'message': 'Debrief Generated',
-        'debrief': debrief_snapshot.debrief_json
+        'debrief': debrief_snapshot.debrief_text
     })
 
 # view to pause the session

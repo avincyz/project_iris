@@ -7,9 +7,10 @@ from ..config.score_sheet import (OUTCOME_SCORE_CHANGES,
                                   OUTCOME_HEALTH_CHANGES, DIFFICULTY_MODIFIER, PRESSURE_CHANGES, SEVERITY_CHOICES)
 from ..models import (GameSession,
                       QuestionRun,
-                      StageRun)
+                      StageRun, DebriefSnapshot)
 from .service_ai import (generate_ai_inject,
-                         generate_ai_crisis_event)
+                         generate_ai_crisis_event,
+                         generate_ai_feedback)
 
 def process_answer(session_id, question_uid, selected_option_id):
     session = GameSession.objects.get(
@@ -85,6 +86,7 @@ def process_answer(session_id, question_uid, selected_option_id):
         # update wrong count if answer was not good
         if outcome != 'good':
             session.wrong_count += 1
+            question.answer_is_correct = False
 
         # update pressure
         pressure_change = PRESSURE_CHANGES.get(outcome, 0)
@@ -167,6 +169,7 @@ def process_answer(session_id, question_uid, selected_option_id):
 
         result_json = {
             'outcome': outcome,
+            'answer_is_correct': question.answer_is_correct,
             'score_change': score_change,
             'health_change': health_change,
             'new_score': session.score,
