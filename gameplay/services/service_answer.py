@@ -116,7 +116,7 @@ def process_answer(session_id, question_uid, selected_option_id):
         if random.random() < 0.4:
             inject_message = generate_ai_inject(session.incident_type, scenario_severity)
 
-        if random.random() < 0.5 and scenario_severity in ['critical', 'high']:
+        if random.random() < 0.3 and scenario_severity in ['critical', 'high']:
             crisis_event = generate_ai_crisis_event(session.incident_type, scenario_severity)
 
         all_questions_complete = False

@@ -2,7 +2,6 @@ import requests, json
 
 from gameplay.models import QuestionRun
 
-
 def generate_ai_scenario(incident_type, difficulty):
     prompt = f"""
         Generate a cyber incident training scenario.
@@ -62,12 +61,12 @@ def generate_ai_scenario(incident_type, difficulty):
 
 def generate_ai_inject(incident_type, severity):
     prompt = f"""
-        Generate a short cyber incident update.
+        Generate a short paragraph of a cyber incident update with the following details. It should not be more than 25 words long.
     
         Topic: {incident_type}
         Severity: {severity}
     
-        Return ONLY valid JSON.
+        Return ONLY valid JSON. Use the format below.
     
         Format:
         {{ "inject": "" }}
@@ -104,23 +103,40 @@ def generate_ai_inject(incident_type, severity):
 
 def generate_ai_crisis_event(incident_type, severity):
     prompt = f"""
-        You are generating a sudden cyber crisis escalation event.
-    
+        You are generating a cybersecurity scenario injection question.
+
         Incident type: {incident_type}
         Severity: {severity}
-    
+        
         Return ONLY valid JSON.
         Do not include markdown fences.
         Do not include explanations.
-    
+        
         Format:
-        {{"crisis_event": "short unexpected escalation message"}}
-    
+        {{
+          "question_text": "short scenario question",
+          "options": [
+            {{
+              "option_uid": "A",
+              "option_text": "good response",
+              "outcome": "good"
+            }},
+            {{
+              "option_uid": "B",
+              "option_text": "bad response",
+              "outcome": "bad"
+            }}
+          ]
+        }}
+        
         Rules:
-        - Keep it realistic
-        - Make it feel urgent
-        - Keep it under 25 words
-        - The event must match the incident type
+        - The injection must be phrased as a question.
+        - There must be exactly 2 answers.
+        - Answer A must be the answer with a good outcome.
+        - Answer B must be the answer with a bad outcome.
+        - Keep it realistic and concise.
+        - Keep the question under 50 words.
+        - Match the incident type and severity.
     """.strip()
 
     try:
@@ -146,11 +162,25 @@ def generate_ai_crisis_event(incident_type, severity):
         json_text = raw[start:end]
         parsed_text = json.loads(json_text)
 
-        return parsed_text.get("crisis_event")
+        return parsed_text
 
     except Exception as e:
         print(f"[AI scenario fallback triggered] {e}")
-        return 'Crisis event generated'
+        return {
+            "question_text": f"A {severity} {incident_type} escalation is developing. What should the team do next?",
+            "options": [
+                {
+                    "option_uid": "A",
+                    "option_text": "Investigate and respond immediately",
+                    "outcome": "good",
+                },
+                {
+                    "option_uid": "B",
+                    "option_text": "Delay action and hope it resolves itself",
+                    "outcome": "bad",
+                },
+            ],
+        }
 
 def generate_ai_feedback(session):
     questions_answered_wrong = QuestionRun.objects.filter(
@@ -158,8 +188,17 @@ def generate_ai_feedback(session):
         answer_is_correct = False,
     )
 
-    if not questions_answered_wrong:
+    if not questions_answered_wrong and session.status == 'completed':
         return "Well done! You completed the scenario without any incorrect answers."
+
+    if not questions_answered_wrong and session.status == 'abandoned':
+        return (
+            'You answered all questions correctly.\n'
+            'However, the scenario was abandoned before completion.\n'
+            'Thus, performance cannot be accurately accessed.\n'
+            'Please complete a scenario without abandoning for a full debrief.\n'
+            'It is recommended to review all relevant verification, escalation and response procedures before attempting again.'
+        )
 
     # for testing
     # print(questions_answered_wrong)
@@ -188,14 +227,21 @@ def generate_ai_feedback(session):
     prompt = f"""
     You are a cybersecurity training instructor.
 
-    Generate learning feedback for a player who answered questions incorrectly.
+    Generate a generalised debrief for a tabletop training session.
 
-    Explain briefly:
-    - why their answer was wrong
-    - what the correct response is
-    - what best practice should be
-
-    Return bullet points.
+    Session status: {session.status}
+    Topic: {session.incident_type}
+    Wrong count: {session.wrong_count}
+    
+    The debrief must:
+    - be concise
+    - be generalised, not overly detailed
+    - include overall performance
+    - include key weakness areas
+    - include recommended next steps
+    - if the session was abandoned, mention that it was incomplete
+    
+    Return plain text with short bullet points.
 
     Incorrect answers:
     {json.dumps(questions_answered_wrong_data, indent = 2)}
@@ -213,15 +259,30 @@ def generate_ai_feedback(session):
         )
         response.raise_for_status()
         data = response.json()
-        return data.get('response', '')
+        return data.get('response', '').strip()
 
     except Exception as e:
         print(f"[AI feedback fallback triggered] {e}")
         fallback_feedback = []
+
         for item in questions_answered_wrong_data:
             fallback_feedback.append(
                 f'- Question: {item["question"]}\n'
                 f'  Your selected option: {item["selected_wrong_option"]}\n'
                 f'  Correct option: {item["correct_option"]}\n'
             )
+
+        fallback_feedback.append("General Debrief:")
+        if session.status == "abandoned":
+            fallback_feedback.append("- Session was abandoned before completion.")
+
+        fallback_feedback.append(f"- Topic: {session.incident_type}")
+        fallback_feedback.append(f"- Incorrect answers recorded: {session.wrong_count}")
+
+        if session.wrong_count > 0:
+            fallback_feedback.append("- Incident recognition and response decision-making was lacking.")
+            fallback_feedback.append("- Please review incorrect decisions and try the scenario again.")
+        else:
+            fallback_feedback.append("- Well done! All questions were answered correctly.")
+
         return '\n'.join(fallback_feedback)
