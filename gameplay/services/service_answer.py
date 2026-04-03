@@ -44,17 +44,20 @@ def process_answer(session_id, question_uid, selected_option_id):
         diff_modifier = DIFFICULTY_MODIFIER.get(difficulty, 1.0)
 
         options = question.options_json
-        selected_option = None
+        selected_option_exists = False
+        outcome = None
 
         for option in options:
+            if selected_option_id == 'T':
+                selected_option_exists = True
+                outcome = 'timeout'
             if selected_option_id == option['option_uid']:
-                selected_option = option
+                selected_option_exists = True
+                outcome = option['outcome']
                 break
 
-        if not selected_option:
+        if not selected_option_exists:
             raise ValueError('Specified option not found')
-
-        outcome = selected_option['outcome']
 
         # check how much health will change based on answer
         health_change = OUTCOME_HEALTH_CHANGES.get(outcome, 0)
@@ -123,7 +126,7 @@ def process_answer(session_id, question_uid, selected_option_id):
         scenario_failed = False
 
         # check if health is 0, means scenario failed
-        if session.health <= 0:
+        if session.health <= 0 or session.wrong_count >= 5:
             scenario_failed = True
             session.status = 'failed'
             session.completed_at = timezone.now()
