@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.db.models import Max
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -241,3 +242,24 @@ def list_active_sessions(request):
     ]
 
     return Response(data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def leaderboard_view(request):
+    leaderboard_data = (
+        GameSession.objects
+        .filter(user__isnull = False)
+        .values('user__username')
+        .annotate(points = Max('score'))
+        .order_by('-points')[:3]
+    )
+
+    results = []
+    for i, row in enumerate(leaderboard_data, start = 1):
+        results.append({
+            'rank': i,
+            'name': row['user__username'],
+            'points': row['points'],
+        })
+
+    return Response(results)
